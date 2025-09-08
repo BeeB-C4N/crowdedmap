@@ -30,7 +30,7 @@
             padding: 3rem 1rem;
             border-radius: 8px;
             overflow: hidden;
-            background-image: url('./images/header-bg.jpg'); /* This path needs to be correct */
+            background-image: url('./images/金沢駅.jpg'); 
             background-size: cover;
             background-position: center 30%;
         }
@@ -182,7 +182,6 @@
                 milli: './data/crowded_milli.csv'
             };
 
-            // Note: It's assumed you have images with these names in the './images/' directory
             const IMAGE_URLS = {
                 "兼六園": "./images/兼六園.jpg",
                 "近江町市場": "./images/近江町市場.jpg",
@@ -192,7 +191,6 @@
                 "金沢城公園": "./images/金沢城公園.jpg",
             };
             
-            // Header background image
             const HEADER_IMAGE_URL = './images/header-bg.jpg';
             document.querySelector('.header-container').style.backgroundImage = `url('${HEADER_IMAGE_URL}')`;
 
@@ -211,7 +209,6 @@
                         throw new Error(`Failed to load ${path}: ${response.statusText}`);
                     }
                     const csvText = await response.text();
-                    // Remove BOM (Byte Order Mark) if present
                     const cleanCsvText = csvText.replace(/^\uFEFF/, '');
                     return new Promise(resolve => {
                         Papa.parse(cleanCsvText, {
@@ -220,19 +217,18 @@
                             complete: (results) => resolve(results.data),
                             error: (error) => {
                                 console.error(`Error parsing ${path}:`, error);
-                                resolve([]); // Return empty array on error
+                                resolve([]);
                             }
                         });
                     });
                 } catch (error) {
                     console.error(`Error fetching ${path}:`, error);
-                    return []; // Return empty array on error
+                    return [];
                 }
             };
 
             // --- Main Application Logic ---
             try {
-                // Load all data in parallel
                 const [masterData, criterionData, milliData] = await Promise.all([
                     loadCsvData(DATA_PATHS.master),
                     loadCsvData(DATA_PATHS.criterion),
@@ -244,38 +240,31 @@
                 }
 
                 const facilityData = masterData.map(master => {
-                    // Find the corresponding criterion data, case-insensitive and trimming whitespace
-                    const criterion = criterionData.find(c => c.地点名.trim() === master.地点名.trim());
-                    // Filter milli data for this facility
+                    const criterion = criterionData.find(c => c.地点名 && c.地点名.trim() === master.地点名.trim());
                     const milli = milliData.filter(m => m.施設 && m.施設.trim() === master.地点名.trim());
                     return { ...master, criterion, milli };
-                }).filter(f => f.緯度 && f.経度); // Ensure facility has location data
+                }).filter(f => f.緯度 && f.経度);
 
                 const map = L.map('map').setView([36.565, 136.658], 14);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
                 }).addTo(map);
+                
+                L.Util.getMapInstance = () => map;
 
-                // --- Initial Population ---
                 populateIntroductionTab(facilityData);
                 updateMap(facilityData);
                 displayTodayAllFacilitiesCalendar(facilityData);
                 
-                // --- Event Listeners Setup ---
                 setupEventListeners(facilityData);
 
             } catch (error) {
                 console.error("Application failed to initialize:", error);
-                // Display a user-friendly error message
-                document.querySelector('main').innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。ファイルパスが正しいか、ファイルが破損していないか確認してください。</p></div>`;
+                document.querySelector('main').innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。ファイルパスが正しいか、GitHub Pagesに正しくアップロードされているか確認してください。</p></div>`;
             }
-
-            // --- All other functions from the prototype go here ---
-            // (This keeps the main logic clean and readable)
             
             function setupEventListeners(facilityData) {
                 const tabs = document.querySelectorAll('.tab-btn');
-                const tabContents = document.querySelectorAll('.tab-content');
                 const map = L.Util.getMapInstance('map');
 
                 tabs.forEach(tab => {
