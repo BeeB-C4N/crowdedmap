@@ -228,7 +228,23 @@
                     return [];
                 }
             };
+
+            const getLatestDateFromData = (data) => {
+                if (!data || data.length === 0) return null;
+                const dates = data
+                    .map(row => new Date(row.年月日))
+                    .filter(date => !isNaN(date.getTime()));
+                if (dates.length === 0) return null;
+                const latest = new Date(Math.max.apply(null, dates));
+                return latest;
+            };
             
+            // --- New function to format date without zero-padding ---
+            const formatDateForCsv = (date) => {
+                return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+            };
+
+
             // --- Main Application Logic ---
             try {
                 const [masterData, criterionData, milliData] = await Promise.all([
@@ -241,19 +257,16 @@
                     throw new Error("One or more data files could not be loaded or are empty.");
                 }
 
-                // Use the user's system clock for "today"
-                const today = new Date();
+                const latestDateObj = getLatestDateFromData(milliData);
+                if (!latestDateObj) {
+                    throw new Error("No valid dates found in crowded_milli.csv.");
+                }
 
                 const facilityData = masterData.map(master => {
                     if (!master.地点名) return null;
                     const masterName = master.地点名.trim();
                     const criterion = criterionData.find(c => c.地点名 && c.地点名.trim() === masterName);
-                    // Filter out future dates from the data
-                    const milli = milliData.filter(m => {
-                        if (!m.施設 || m.施設.trim() !== masterName) return false;
-                        const recordDate = new Date(m.年月日);
-                        return recordDate <= today; // Only include records up to today
-                    });
+                    const milli = milliData.filter(m => m.施設 && m.施設.trim() === masterName);
                     return { ...master, criterion, milli };
                 }).filter(f => f && f.緯度 && f.経度);
 
@@ -265,9 +278,9 @@
                 L.Util.getMapInstance = () => map;
 
                 populateIntroductionTab(facilityData);
-                updateMap(facilityData, today);
-                displayTodayAllFacilitiesCalendar(facilityData, today);
-                setupEventListeners(facilityData, today);
+                updateMap(facilityData, latestDateObj);
+                displayTodayAllFacilitiesCalendar(facilityData, latestDateObj);
+                setupEventListeners(facilityData, latestDateObj);
 
             } catch (error) {
                 console.error("Application failed to initialize:", error);
@@ -275,7 +288,7 @@
                 mainContent.innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。CSVファイルがUTF-8で保存されているか、ファイルパスやファイル名が正しいかを確認してください。</p></div>`;
             }
             
-            function setupEventListeners(facilityData, today) {
+            function setupEventListeners(facilityData, latestDateObj) {
                 const tabs = document.querySelectorAll('.tab-btn');
                 const map = L.Util.getMapInstance('map');
 
@@ -289,7 +302,7 @@
                         btn.addEventListener('click', () => {
                             const facility = facilityData.find(f => f.地点名 === btn.dataset.facilityName);
                             if (facility) {
-                                displayDailyCalendarForFacility(facility, facilityData, today);
+                                displayDailyCalendarForFacility(facility, facilityData, latestDateObj);
                                 switchToTab('calendar-content', map);
                             }
                         });
@@ -300,7 +313,7 @@
                     if (e.target.matches('.intro-calendar-btn')) {
                         const facility = facilityData.find(f => f.地点名 === e.target.dataset.facilityName);
                         if (facility) {
-                            displayDailyCalendarForFacility(facility, facilityData, today);
+                            displayDailyCalendarForFacility(facility, facilityData, latestDateObj);
                             switchToTab('calendar-content', map);
                         }
                     }
@@ -342,12 +355,12 @@
                 });
             }
 
-            function updateMap(facilityData, today) {
+            function updateMap(facilityData, latestDateObj) {
                 const map = L.Util.getMapInstance('map');
                 if (!map) return;
                 
-                const todayString = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
-                const currentHour = today.getHours();
+                const latestDateString = formatDateForCsv(latestDateObj);
+                const currentHour = new Date().getHours(); 
 
                 facilityData.forEach(facility => {
                     const lat = parseFloat(facility.緯度);
@@ -355,7 +368,7 @@
                     if (isNaN(lat) || isNaN(lon)) return;
                     
                     const latestRecord = facility.milli
-                        .filter(d => d.年月日 === todayString && parseInt(d.時刻, 10) <= currentHour)
+                        .filter(d => d.年月日 === latestDateString && parseInt(d.時刻, 10) <= currentHour)
                         .sort((a, b) => parseInt(b.時刻, 10) - parseInt(a.時刻, 10))[0];
 
                     const currentCount = latestRecord ? latestRecord.人数 : 0;
@@ -391,17 +404,19 @@
                 });
             }
 
-            function displayTodayAllFacilitiesCalendar(facilityData, today) {
+            function displayTodayAllFacilitiesCalendar(facilityData, latestDateObj) {
                 const map = L.Util.getMapInstance('map');
-                const todayString = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
-
+                const latestDateString = formatDateForCsv(latestDateObj);
+                
                 document.getElementById('calendar-title').textContent = '時間帯別 混雑度実績';
-                document.getElementById('calendar-info').textContent = `施設全体（${todayString}）`;
+                document.getElementById('calendar-info').textContent = `施設全体（${latestDateString}）`;
                 const toggleBtn = document.getElementById('calendar-toggle-btn');
                 toggleBtn.textContent = '施設ごとの混雑度を表示';
                 toggleBtn.onclick = () => switchToTab('introduction-content', map);
-
-                const currentHour = today.getHours();
+                
+                const realToday = new Date();
+                const isDisplayingRealToday = latestDateObj.toDateString() === realToday.toDateString();
+                const currentHour = realToday.getHours();
 
                 let headerHtml = '<tr><th>時刻</th>';
                 facilityData.forEach(facility => { headerHtml += `<th>${facility.地点名}</th>`; });
@@ -410,7 +425,7 @@
                 const dataByFacilityAndHour = {};
                 facilityData.forEach(facility => {
                     dataByFacilityAndHour[facility.地点名] = facility.milli
-                        .filter(d => d.年月日 === todayString)
+                        .filter(d => d.年月日 === latestDateString)
                         .reduce((acc, row) => { acc[parseInt(row.時刻, 10)] = row.人数; return acc; }, {});
                 });
 
@@ -418,7 +433,10 @@
                 for (let hour = 8; hour <= 20; hour++) {
                     bodyHtml += `<tr><td class="time-header">${String(hour).padStart(2, '0')}:00</td>`;
                     facilityData.forEach(facility => {
-                        if (hour > currentHour) { bodyHtml += `<td class="future-time-bg"></td>`; return; }
+                        if (isDisplayingRealToday && hour > currentHour) { 
+                            bodyHtml += `<td class="future-time-bg"></td>`; 
+                            return; 
+                        }
                         if (!facility.criterion) { bodyHtml += `<td>-</td>`; return; }
                         const count = dataByFacilityAndHour[facility.地点名]?.[hour] || 0;
                         const level = getCongestionLevel(count, facility.criterion);
@@ -429,29 +447,30 @@
                 document.getElementById('calendar-container').innerHTML = `<table class="calendar-table"><thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
             }
 
-            function displayDailyCalendarForFacility(facility, facilityData, today) {
+            function displayDailyCalendarForFacility(facility, facilityData, latestDateObj) {
                 const map = L.Util.getMapInstance('map');
                 document.getElementById('calendar-title').textContent = `${facility.地点名} 混雑度実績`;
                 document.getElementById('calendar-info').textContent = '施設別（日別） - 直近7日間';
                 const toggleBtn = document.getElementById('calendar-toggle-btn');
                 toggleBtn.textContent = '施設全体表示に戻る';
-                toggleBtn.onclick = () => displayTodayAllFacilitiesCalendar(facilityData, today);
+                toggleBtn.onclick = () => displayTodayAllFacilitiesCalendar(facilityData, latestDateObj);
                 
-                const currentHour = today.getHours();
+                const realToday = new Date();
+                const currentHour = realToday.getHours();
                 const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
                 let headerHtml = '<tr><th>時刻</th>';
                 
                 const datesToDisplay = [];
                 for (let i = 6; i >= 0; i--) {
-                    const date = new Date(today);
+                    const date = new Date(latestDateObj);
                     date.setDate(date.getDate() - i);
                     datesToDisplay.push(date);
                 }
 
                 datesToDisplay.forEach(date => {
-                    const isToday = date.toDateString() === today.toDateString();
-                    const thClass = isToday ? 'today-header today-column' : '';
-                    headerHtml += `<th class="${thClass}">${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}<br>(${weekdays[date.getDay()]})</th>`;
+                    const isRealToday = date.toDateString() === realToday.toDateString();
+                    const thClass = isRealToday ? 'today-header today-column' : '';
+                    headerHtml += `<th class="${thClass}">${date.getMonth() + 1}/${date.getDate()}<br>(${weekdays[date.getDay()]})</th>`;
                 });
                 headerHtml += '</tr>';
 
@@ -461,17 +480,17 @@
                     bodyHtml += `<tr><td class="time-header">${String(hour).padStart(2, '0')}:00</td>`;
                     
                     datesToDisplay.forEach(date => {
-                        const isToday = date.toDateString() === today.toDateString();
-                        const todayClass = isToday ? 'today-column' : '';
+                        const isRealToday = date.toDateString() === realToday.toDateString();
+                        const todayClass = isRealToday ? 'today-column' : '';
                         let cellClass = todayClass;
 
-                        if (isToday && hour > currentHour) {
+                        if (isRealToday && hour > currentHour) {
                              cellClass += ' future-time-bg';
                              bodyHtml += `<td class="${cellClass.trim()}"></td>`;
                              return;
                         }
 
-                        const dateString = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+                        const dateString = formatDateForCsv(date);
                         const record = facility.milli.find(d => d.年月日 === dateString && parseInt(d.時刻, 10) === hour);
                         const count = record ? record.人数 : 0;
                         const level = getCongestionLevel(count, facility.criterion);
