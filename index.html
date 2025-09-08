@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金沢市 観光混雑度マップ (完成版)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        html { scroll-behavior: smooth; }
+        body { 
+            font-family: 'Shippori Mincho', serif; 
+            background: linear-gradient(to bottom, #0c0c1e, #000000);
+            color: #f0f0f0; 
+        }
+        .golden-text { background: linear-gradient(to right, #BF953F, #FCF6BA, #B38728, #FBF5B7, #AA771C); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .content-box { background-color: rgba(0, 0, 0, 0.4); border: 1px solid #BF953F; border-radius: 8px; padding: 1.5rem; backdrop-filter: blur(8px); }
+        
+        /* Header Style */
+        .header-container {
+            position: relative;
+            padding: 3rem 1rem;
+            border-radius: 8px;
+            overflow: hidden;
+            background-image: url('https://images.unsplash.com/photo-1590622835252-a8c741e4d8d4?q=80&w=2070&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center 30%;
+        }
+        .header-container::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1;
+        }
+        .header-container > * {
+            position: relative;
+            z-index: 2;
+        }
+        
+        /* Tab Styles */
+        .tabs { border-bottom: 1px solid #BF953F; display: flex; }
+        .tab-btn { flex-grow: 1; text-align: center; padding: 0.75rem 1rem; cursor: pointer; background-color: transparent; border: none; color: #a0a0a0; font-size: 1.1rem; transition: all 0.2s; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: #FCF6BA; border-bottom: 3px solid #BF953F; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Map Styles */
+        #map { height: 80vh; width: 100%; border-radius: 8px; background-color: #333; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: rgba(26, 26, 26, 0.9); color: #f0f0f0; border: 1px solid #BF953F; box-shadow: 0 3px 14px rgba(0,0,0,0.4); }
+        .leaflet-popup-content h3 { font-size: 1.2rem; font-weight: bold; color: #FCF6BA; }
+        .leaflet-popup-content p { margin: 0.5em 0; }
+        .custom-div-icon .marker-container { border-radius: 50%; overflow: hidden; box-shadow: 0 0 10px rgba(252, 246, 186, 0.7); transition: transform 0.2s ease-in-out; background-color: #1a1a1a; }
+        .custom-div-icon .marker-container:hover { transform: scale(1.1); }
+        .custom-div-icon img { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Calendar Styles */
+        .calendar-table { border-collapse: separate; border-spacing: 2px; width: 100%; table-layout: fixed; }
+        .calendar-table th, .calendar-table td { text-align: center; padding: 8px 4px; border: 1px solid #444; }
+        .calendar-table th { background-color: #333; color: #BF953F; font-size: 0.9em; height: 50px; }
+        .calendar-table td.time-header { background-color: #2a2a2a; font-weight: bold; color: #FCF6BA; text-align: center; width: 80px; }
+        
+        /* Today's Column Highlight */
+        .calendar-table .today-header { color: #FCF6BA; font-weight: bold; }
+        .calendar-table .today-column { border-left: 1px solid #BF953F; border-right: 1px solid #BF953F; }
+        .calendar-table th.today-column { border-top: 1px solid #BF953F; }
+        .calendar-table tr:last-child td.today-column { border-bottom: 1px solid #BF953F;}
+        
+        /* Introduction Tab Styles */
+        #introduction-content .facility-card { background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+        @media (min-width: 768px) { #introduction-content .facility-card { flex-direction: row; } }
+        #introduction-content .facility-card img { width: 100%; height: 200px; object-fit: cover; }
+        @media (min-width: 768px) { #introduction-content .facility-card img { width: 300px; height: auto; flex-shrink: 0; } }
+
+        /* Modal Styles */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-container { background: #1e1e1e; border: 1px solid #BF953F; color: #f0f0f0; border-radius: 8px; padding: 2rem; width: 90%; max-width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
+        .modal-header { border-bottom: 1px solid #BF953F; padding-bottom: 1rem; margin-bottom: 1rem; }
+        .modal-content { overflow-y: auto; flex-grow: 1; }
+        .modal-footer { margin-top: 1.5rem; text-align: right; }
+
+        /* Shared Styles */
+        .level-1-bg { background-color: #166534; } .level-2-bg { background-color: #a16207; } .level-3-bg { background-color: #991b1b; }
+        .future-time-bg { background-color: #4b5563; }
+        .level-1-border { border: 4px solid #22c55e; } .level-2-border { border: 4px solid #f59e0b; } .level-3-border { border: 4px solid #ef4444; }
+        .level-1-text { color: #22c55e; } .level-2-text { color: #f59e0b; } .level-3-text { color: #ef4444; }
+        .btn-gold { background: linear-gradient(to right, #BF953F, #AA771C); color: white; padding: 8px 16px; border-radius: 6px; border: 1px solid #FCF6BA; transition: all 0.2s; }
+        .btn-gold:hover { box-shadow: 0 0 10px #FCF6BA; transform: translateY(-2px); }
+        .legend-item { display: flex; align-items: center; }
+        .legend-color-box { height: 1rem; width: 1rem; border-radius: 9999px; border: 2px solid #e5e7eb; margin-right: 0.5rem; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8 header-container">
+            <h1 class="text-4xl md:text-5xl font-bold golden-text tracking-wider">金沢市 観光混雑度マップ</h1>
+            <p class="text-gray-300 mt-2">Kanazawa Congestion Map</p>
+        </header>
+
+        <main class="content-box">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="map-content">マップ</button>
+                <button class="tab-btn" data-tab="calendar-content">カレンダー</button>
+                <button class="tab-btn" data-tab="introduction-content">施設紹介</button>
+            </div>
+
+            <!-- Map Content -->
+            <div id="map-content" class="tab-content active pt-6">
+                <h2 class="text-xl font-bold mb-4 golden-text">リアルタイム混雑状況</h2>
+                <div id="map"></div>
+                <div class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-4 text-sm">
+                    <div class="legend-item"><span class="legend-color-box bg-[#22c55e]"></span>ゆっくりと観光いただけます</div>
+                    <div class="legend-item"><span class="legend-color-box bg-[#f59e0b]"></span>通常の混み具合です</div>
+                    <div class="legend-item"><span class="legend-color-box bg-[#ef4444]"></span>多くの観光客で賑わっています</div>
+                </div>
+            </div>
+            
+            <!-- Calendar Content -->
+            <div id="calendar-content" class="tab-content pt-6">
+                 <div class="flex flex-col md:flex-row justify-between md:items-center mb-4 gap-4">
+                    <div>
+                        <h2 id="calendar-title" class="text-xl font-bold golden-text">時間帯別 混雑度実績</h2>
+                        <p id="calendar-info" class="text-gray-400">施設全体（本日）</p>
+                    </div>
+                    <button id="calendar-toggle-btn" class="btn-gold self-start md:self-center"></button>
+                </div>
+                 <div class="flex flex-wrap justify-center gap-x-6 gap-y-2 mb-4 text-sm">
+                    <div class="legend-item"><span class="legend-color-box bg-[#166534]"></span>ゆっくり</div>
+                    <div class="legend-item"><span class="legend-color-box bg-[#a16207]"></span>通常</div>
+                    <div class="legend-item"><span class="legend-color-box bg-[#991b1b]"></span>混雑</div>
+                </div>
+                <div class="overflow-x-auto">
+                    <div id="calendar-container"></div>
+                </div>
+            </div>
+
+            <!-- Introduction Content -->
+            <div id="introduction-content" class="tab-content pt-6 space-y-8">
+                <!-- Facility cards will be inserted here by JS -->
+            </div>
+        </main>
+        
+        <footer class="text-center mt-12 text-gray-500 text-sm">
+            <p>&copy; 2024 Code for Noto. All Rights Reserved.</p>
+            <a href="#" id="disclaimer-link" class="underline hover:text-golden-text transition">免責事項</a>
+        </footer>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal-overlay" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2 class="text-2xl font-bold golden-text">免責事項</h2>
+            </div>
+            <div class="modal-content">
+                <p class="mb-4">本ウェブサイトで提供される混雑度情報は、あくまで予測および参考情報です。リアルタイムの状況を完全に保証するものではありません。</p>
+                <p class="mb-4">この情報は、サンプルデータに基づいて生成されており、実際の混雑状況とは異なる場合があります。通信状況やシステムの都合により、情報の更新が遅れることや、表示されないことがあります。</p>
+                <p class="mb-4">本ウェブサイトの利用によって生じたいかなる損害についても、運営者は一切の責任を負いません。お出かけの際の判断は、ご自身の責任でお願いいたします。</p>
+                <p>掲載されている情報は、予告なく変更または削除されることがありますので、あらかじめご了承ください。</p>
+            </div>
+            <div class="modal-footer">
+                <button id="close-modal-btn" class="btn-gold">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- Sample Data (No CSV files needed) ---
+        const masterData = [
+            { "地点名": "近江町市場", "英語名称": "Omicho Market", "緯度": "36.5717335", "経度": "136.6558651", "説明": "約300年の歴史を持つ金沢市民の台所。新鮮な海の幸や加賀野菜が並び、食べ歩きも楽しめます。" },
+            { "地点名": "ひがし茶屋街", "英語名称": "Higashi Chaya District", "緯度": "36.5725825", "経度": "136.6639852", "説明": "石畳の道と出格子が美しい、金沢で最も大きな茶屋街。和菓子店や伝統工芸品店が軒を連ねます。" },
+            { "地点名": "兼六園", "英語名称": "Kenrokuen Garden", "緯度": "36.5621278", "経度": "136.6622613", "説明": "国の特別名勝であり、日本三名園の一つ。四季折々の美しい景観が楽しめる廻遊式の庭園です。" },
+            { "地点名": "金沢21世紀美術館", "英語名称": "21st Century Museum of Contemporary Art, Kanazawa", "緯度": "36.560933", "経度": "136.658223", "説明": "円形のガラス張りの建物が特徴的な現代美術館。誰もが気軽に立ち寄れ、様々な出会いの場となることを目指しています。" },
+            { "地点名": "金沢駅", "英語名称": "Kanazawa Station", "緯度": "36.578131", "経度": "136.648393", "説明": "伝統的な能楽で使われる鼓をイメージした「鼓門」が象徴的な駅。世界で最も美しい駅の一つに選ばれています。" },
+            { "地点名": "金沢城公園", "英語名称": "Kanazawa Castle Park", "緯度": "36.5645", "経度": "136.6596", "説明": "加賀百万石の歴史を今に伝える前田家の居城跡。復元された菱櫓や五十間長屋は圧巻です。" }
+        ];
+
+        const criterionData = [
+            { "地点名": "近江町市場", "notcrowded": "15", "normal": "40", "crowded": "41" },
+            { "地点名": "ひがし茶屋街", "notcrowded": "10", "normal": "30", "crowded": "31" },
+            { "地点名": "兼六園", "notcrowded": "20", "normal": "50", "crowded": "51" },
+            { "地点名": "金沢21世紀美術館", "notcrowded": "25", "normal": "60", "crowded": "61" },
+            { "地点名": "金沢駅", "notcrowded": "20", "normal": "45", "crowded": "46" },
+            { "地点名": "金沢城公園", "notcrowded": "18", "normal": "48", "crowded": "49" }
+        ];
+        
+        const milliData = [];
+        for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateString = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+            masterData.forEach(master => {
+                for (let hour = 0; hour < 24; hour++) {
+                    let count = (hour >= 9 && hour <= 16) ? Math.floor(Math.random() * 80) + 10 : Math.floor(Math.random() * 10);
+                    milliData.push({ "施設": master.地点名, "年月日": dateString, "時刻": String(hour), "人数": String(count) });
+                }
+            });
+        }
+        
+        const imageUrls = {
+            "兼六園": "https://images.unsplash.com/photo-1591352469588-d6313725de9c?q=80&w=1974&auto=format&fit=crop",
+            "近江町市場": "https://images.unsplash.com/photo-1594326224093-91b4ab1153d3?q=80&w=1964&auto=format&fit=crop",
+            "ひがし茶屋街": "https://images.unsplash.com/photo-1590622835252-a8c741e4d8d4?q=80&w=2070&auto=format&fit=crop",
+            "金沢21世紀美術館": "https://images.unsplash.com/photo-1597982242130-a337a67f53f3?q=80&w=2070&auto=format&fit=crop",
+            "金沢駅": "https://images.unsplash.com/photo-1615469038892-4913702a8092?q=80&w=2071&auto=format&fit=crop",
+            "金沢城公園": "https://images.unsplash.com/photo-1621371510258-01124233512a?q=80&w=2070&auto=format&fit=crop",
+        };
+
+        const congestionLevels = {
+            1: { message: "ゆっくりと観光いただけます", className: "level-1" },
+            2: { message: "通常の混み具合です", className: "level-2" },
+            3: { message: "多くの観光客で賑わっています", className: "level-3" }
+        };
+
+        const facilityData = masterData.map(master => ({
+            ...master,
+            criterion: criterionData.find(c => c.地点名 === master.地点名),
+            milli: milliData.filter(m => m.施設 === master.地点名)
+        }));
+
+        const map = L.map('map').setView([36.565, 136.658], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        }).addTo(map);
+
+        // --- Initial Population ---
+        populateIntroductionTab();
+        updateMap(facilityData);
+        displayTodayAllFacilitiesCalendar();
+        
+        // --- Event Listeners ---
+        const tabs = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                switchToTab(tab.dataset.tab);
+            });
+        });
+        
+        map.on('popupopen', function(e) {
+            const popupNode = e.popup.getElement();
+            const btn = popupNode.querySelector('.popup-calendar-btn');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    const facilityName = btn.dataset.facilityName;
+                    const facility = facilityData.find(f => f.地点名 === facilityName);
+                    if (facility) {
+                        displayDailyCalendarForFacility(facility);
+                        switchToTab('calendar-content');
+                    }
+                });
+            }
+        });
+
+        document.getElementById('introduction-content').addEventListener('click', function(e) {
+            if (e.target.matches('.intro-calendar-btn')) {
+                const facilityName = e.target.dataset.facilityName;
+                const facility = facilityData.find(f => f.地点名 === facilityName);
+                if (facility) {
+                    displayDailyCalendarForFacility(facility);
+                    switchToTab('calendar-content');
+                }
+            }
+        });
+
+        // Modal listeners
+        const disclaimerLink = document.getElementById('disclaimer-link');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        
+        disclaimerLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            modalOverlay.style.display = 'flex';
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            modalOverlay.style.display = 'none';
+        });
+
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                modalOverlay.style.display = 'none';
+            }
+        });
+
+
+        // --- Core Functions ---
+        function switchToTab(tabId) {
+            tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+            tabContents.forEach(tc => tc.classList.toggle('active', tc.id === tabId));
+            if (tabId === 'map-content') {
+                setTimeout(() => map.invalidateSize(), 1);
+            }
+        }
+
+        function getCongestionLevel(count, criterion) {
+            if (!criterion) return 1;
+            const num = parseInt(count, 10);
+            if (num <= parseInt(criterion.notcrowded, 10)) return 1;
+            if (num <= parseInt(criterion.normal, 10)) return 2;
+            return 3;
+        }
+        
+        function createCustomIcon(level, facilityName) {
+            const levelInfo = congestionLevels[level];
+            const imageUrl = imageUrls[facilityName] || `https://placehold.co/80x80/333333/FFFFFF?text=?`;
+            return L.divIcon({
+                html: `<div class="marker-container ${levelInfo.className}-border"><img src="${imageUrl}" alt="${facilityName}" onerror="this.onerror=null;this.src='https://placehold.co/80x80/333333/FFFFFF?text=Err';"></div>`,
+                className: 'custom-div-icon', iconSize: [80, 80], iconAnchor: [40, 80], popupAnchor: [0, -80]
+            });
+        }
+
+        function updateMap(data) {
+            const today = new Date();
+            const latestDate = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+            const currentHour = today.getHours();
+
+            data.forEach(facility => {
+                const lat = parseFloat(facility.緯度);
+                const lon = parseFloat(facility.経度);
+                if (isNaN(lat) || isNaN(lon)) return;
+                
+                const latestRecord = facility.milli
+                    .filter(d => d.年月日 === latestDate && parseInt(d.時刻, 10) <= currentHour)
+                    .sort((a, b) => parseInt(b.時刻, 10) - parseInt(a.時刻, 10))[0];
+
+                const currentCount = latestRecord ? latestRecord.人数 : 0;
+                const level = getCongestionLevel(currentCount, facility.criterion);
+                const levelInfo = congestionLevels[level];
+
+                const marker = L.marker([lat, lon], { icon: createCustomIcon(level, facility.地点名) })
+                    .addTo(map);
+                
+                const popupContent = `
+                    <h3 class="golden-text">${facility.地点名}</h3>
+                    <p>現在の混雑状況: <strong class="${levelInfo.className}-text">${levelInfo.message}</strong></p>
+                    <button class="btn-gold popup-calendar-btn mt-2 w-full" data-facility-name="${facility.地点名}">時間帯別で表示</button>
+                    `;
+                marker.bindPopup(popupContent);
+            });
+        }
+        
+        function populateIntroductionTab() {
+            const container = document.getElementById('introduction-content');
+            container.innerHTML = '';
+            facilityData.forEach(facility => {
+                const imageUrl = imageUrls[facility.地点名] || `https://placehold.co/300x200/333333/FFFFFF?text=${facility.地点名}`;
+                const cardHtml = `
+                    <div class="facility-card">
+                        <img src="${imageUrl}" alt="${facility.地点名}">
+                        <div class="p-6 flex flex-col">
+                            <h3 class="text-2xl font-bold golden-text">${facility.地点名}</h3>
+                            <p class="text-gray-400 mb-4">${facility.英語名称 || ''}</p>
+                            <p class="text-gray-300 flex-grow">${facility.説明 || ''}</p>
+                            <button class="btn-gold intro-calendar-btn mt-4 self-start" data-facility-name="${facility.地点名}">本日の混雑度を確認する</button>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            });
+        }
+
+        function displayTodayAllFacilitiesCalendar() {
+            document.getElementById('calendar-title').textContent = '時間帯別 混雑度実績';
+            document.getElementById('calendar-info').textContent = '施設全体（本日）';
+            const toggleBtn = document.getElementById('calendar-toggle-btn');
+            toggleBtn.textContent = '施設ごとの混雑度を表示';
+            toggleBtn.onclick = () => switchToTab('introduction-content');
+
+
+            const today = new Date();
+            const latestDate = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+            const currentHour = today.getHours();
+
+            let headerHtml = '<tr><th>時刻</th>';
+            facilityData.forEach(facility => { headerHtml += `<th>${facility.地点名}</th>`; });
+            headerHtml += '</tr>';
+
+            const dataByFacilityAndHour = {};
+            facilityData.forEach(facility => {
+                dataByFacilityAndHour[facility.地点名] = facility.milli
+                    .filter(d => d.年月日 === latestDate)
+                    .reduce((acc, row) => {
+                        acc[parseInt(row.時刻, 10)] = row.人数;
+                        return acc;
+                    }, {});
+            });
+
+            let bodyHtml = '';
+            for (let hour = 8; hour <= 20; hour++) {
+                bodyHtml += `<tr><td class="time-header">${String(hour).padStart(2, '0')}:00</td>`;
+                facilityData.forEach(facility => {
+                    if (hour > currentHour) {
+                        bodyHtml += `<td class="future-time-bg"></td>`;
+                        return;
+                    }
+                    if (!facility.criterion) {
+                        bodyHtml += `<td>-</td>`;
+                        return;
+                    }
+                    const count = dataByFacilityAndHour[facility.地点名][hour] || 0;
+                    const level = getCongestionLevel(count, facility.criterion);
+                    bodyHtml += `<td class="${congestionLevels[level].className}-bg" title="${count}人"></td>`;
+                });
+                bodyHtml += '</tr>';
+            }
+            const tableHtml = `<table class="calendar-table"><thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+            document.getElementById('calendar-container').innerHTML = tableHtml;
+        }
+
+        function displayDailyCalendarForFacility(facility) {
+            document.getElementById('calendar-title').textContent = `${facility.地点名} 混雑度実績`;
+            document.getElementById('calendar-info').textContent = '施設別（日別） - 過去7日間';
+            const toggleBtn = document.getElementById('calendar-toggle-btn');
+            toggleBtn.textContent = '施設全体（本日）表示';
+            toggleBtn.onclick = displayTodayAllFacilitiesCalendar;
+            
+            const today = new Date();
+            const currentHour = today.getHours();
+            const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+            let headerHtml = '<tr><th>時刻</th>';
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                const isToday = date.toDateString() === today.toDateString();
+                const thClass = isToday ? 'today-header today-column' : '';
+                headerHtml += `<th class="${thClass}">${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}<br>(${weekdays[date.getDay()]})</th>`;
+            }
+            headerHtml += '</tr>';
+
+            let bodyHtml = '';
+            for (let hour = 8; hour <= 20; hour++) {
+                bodyHtml += `<tr><td class="time-header">${String(hour).padStart(2, '0')}:00</td>`;
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    const isToday = date.toDateString() === today.toDateString();
+                    const todayClass = isToday ? 'today-column' : '';
+                    let cellClass = todayClass;
+
+                    if (isToday && hour > currentHour) {
+                         cellClass += ' future-time-bg';
+                         bodyHtml += `<td class="${cellClass.trim()}"></td>`;
+                         continue;
+                    }
+
+                    const dateString = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+                    const record = facility.milli.find(d => d.年月日 === dateString && parseInt(d.時刻, 10) === hour);
+                    const count = record ? record.人数 : 0;
+                    const level = getCongestionLevel(count, facility.criterion);
+                    cellClass += ` ${congestionLevels[level].className}-bg`;
+                    bodyHtml += `<td class="${cellClass.trim()}" title="${count}人"></td>`;
+                }
+                bodyHtml += '</tr>';
+            }
+            const tableHtml = `<table class="calendar-table"><thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+            document.getElementById('calendar-container').innerHTML = tableHtml;
+        }
+    });
+    </script>
+</body>
+</html>
