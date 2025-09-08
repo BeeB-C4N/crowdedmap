@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>金沢市 観光混雑度マップ</title>
+    <title>金沢中心部　観光混雑度マップ</title>
     
     <!-- External Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.4.1/papaparse.min.js"></script>
+    <!-- PapaParse CDN URL updated to a stable one -->
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
@@ -161,7 +162,7 @@
                 <h2 class="text-2xl font-bold golden-text">免責事項</h2>
             </div>
             <div class="modal-content">
-                <p class="mb-4">本ウェブサイトで提供される混雑度情報は、あくまで予測および参考情報です。リアルタイムの状況を完全に保証するものではありません。</p>
+                <p class="mb-4">本ウェブサイトで提供される混雑度情報は、Wi-Fiセンシングデータを用いた参考情報です。リアルタイムの状況を完全に保証するものではありません。</p>
                 <p class="mb-4">この情報は、提供されたデータに基づいて生成されており、実際の混雑状況とは異なる場合があります。通信状況やシステムの都合により、情報の更新が遅れることや、表示されないことがあります。</p>
                 <p class="mb-4">本ウェブサイトの利用によって生じたいかなる損害についても、運営者は一切の責任を負いません。お出かけの際の判断は、ご自身の責任でお願いいたします。</p>
                 <p>掲載されている情報は、予告なく変更または削除されることがありますので、あらかじめご了承ください。</p>
@@ -211,6 +212,7 @@
                     const response = await fetch(path);
                     if (!response.ok) throw new Error(`Failed to load ${path}: ${response.statusText}`);
                     const csvText = await response.text();
+                    // BOM (Byte Order Mark) removal
                     const cleanCsvText = csvText.replace(/^\uFEFF/, '');
                     return new Promise(resolve => {
                         Papa.parse(cleanCsvText, {
@@ -239,11 +241,12 @@
                 }
 
                 const facilityData = masterData.map(master => {
+                    if (!master.地点名) return null;
                     const masterName = normalizeNumbers(master.地点名.trim());
                     const criterion = criterionData.find(c => c.地点名 && normalizeNumbers(c.地点名.trim()) === masterName);
                     const milli = milliData.filter(m => m.施設 && normalizeNumbers(m.施設.trim()) === masterName);
                     return { ...master, criterion, milli };
-                }).filter(f => f.緯度 && f.経度);
+                }).filter(f => f && f.緯度 && f.経度);
 
                 const map = L.map('map').setView([36.565, 136.658], 14);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -260,7 +263,7 @@
             } catch (error) {
                 console.error("Application failed to initialize:", error);
                 const mainContent = document.querySelector('main');
-                mainContent.innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。GitHub Pagesにファイルが正しくアップロードされているか、ファイルパスやファイル名が正しいかを確認してください。</p></div>`;
+                mainContent.innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。CSVファイルがUTF-8で保存されているか、ファイルパスやファイル名が正しいかを確認してください。</p></div>`;
             }
             
             function setupEventListeners(facilityData) {
@@ -322,7 +325,7 @@
                 const levelInfo = CONGESTION_LEVELS[level];
                 const imageUrl = IMAGE_URLS[facilityName] || `./images/金沢駅.jpg`;
                 return L.divIcon({
-                    html: `<div class="marker-container ${levelInfo.className}-border"><img src="${imageUrl}" alt="${facilityName}" onerror="this.onerror=null;this.src='images/default.jpg';"></div>`,
+                    html: `<div class="marker-container ${levelInfo.className}-border"><img src="${imageUrl}" alt="${facilityName}" onerror="this.onerror=null;this.src='./images/金沢駅.jpg';"></div>`,
                     className: 'custom-div-icon', iconSize: [80, 80], iconAnchor: [40, 80], popupAnchor: [0, -80]
                 });
             }
@@ -330,7 +333,7 @@
             function updateMap(facilityData) {
                 const map = L.Util.getMapInstance('map');
                 if (!map) return;
-
+                
                 const today = new Date();
                 const latestDate = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
                 const currentHour = today.getHours();
