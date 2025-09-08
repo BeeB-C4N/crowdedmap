@@ -30,7 +30,6 @@
             padding: 3rem 1rem;
             border-radius: 8px;
             overflow: hidden;
-            background-image: url('./images/金沢駅.jpg'); 
             background-size: cover;
             background-position: center 30%;
         }
@@ -191,7 +190,7 @@
                 "金沢城公園": "./images/金沢城公園.jpg",
             };
             
-            const HEADER_IMAGE_URL = './images/header-bg.jpg';
+            const HEADER_IMAGE_URL = './images/金沢駅.jpg';
             document.querySelector('.header-container').style.backgroundImage = `url('${HEADER_IMAGE_URL}')`;
 
 
@@ -201,13 +200,16 @@
                 3: { message: "多くの観光客で賑わっています", className: "level-3" }
             };
 
-            // --- CSV Data Loading Function ---
+            // --- Utility Functions ---
+            const normalizeNumbers = (str) => {
+                if (!str) return str;
+                return str.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+            };
+
             const loadCsvData = async (path) => {
                 try {
                     const response = await fetch(path);
-                    if (!response.ok) {
-                        throw new Error(`Failed to load ${path}: ${response.statusText}`);
-                    }
+                    if (!response.ok) throw new Error(`Failed to load ${path}: ${response.statusText}`);
                     const csvText = await response.text();
                     const cleanCsvText = csvText.replace(/^\uFEFF/, '');
                     return new Promise(resolve => {
@@ -215,10 +217,7 @@
                             header: true,
                             skipEmptyLines: true,
                             complete: (results) => resolve(results.data),
-                            error: (error) => {
-                                console.error(`Error parsing ${path}:`, error);
-                                resolve([]);
-                            }
+                            error: (err) => { console.error(`Error parsing ${path}:`, err); resolve([]); }
                         });
                     });
                 } catch (error) {
@@ -240,8 +239,9 @@
                 }
 
                 const facilityData = masterData.map(master => {
-                    const criterion = criterionData.find(c => c.地点名 && c.地点名.trim() === master.地点名.trim());
-                    const milli = milliData.filter(m => m.施設 && m.施設.trim() === master.地点名.trim());
+                    const masterName = normalizeNumbers(master.地点名.trim());
+                    const criterion = criterionData.find(c => c.地点名 && normalizeNumbers(c.地点名.trim()) === masterName);
+                    const milli = milliData.filter(m => m.施設 && normalizeNumbers(m.施設.trim()) === masterName);
                     return { ...master, criterion, milli };
                 }).filter(f => f.緯度 && f.経度);
 
@@ -255,12 +255,12 @@
                 populateIntroductionTab(facilityData);
                 updateMap(facilityData);
                 displayTodayAllFacilitiesCalendar(facilityData);
-                
                 setupEventListeners(facilityData);
 
             } catch (error) {
                 console.error("Application failed to initialize:", error);
-                document.querySelector('main').innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。ファイルパスが正しいか、GitHub Pagesに正しくアップロードされているか確認してください。</p></div>`;
+                const mainContent = document.querySelector('main');
+                mainContent.innerHTML = `<div class="text-center p-8"><h2 class="text-2xl text-red-500">エラー</h2><p class="mt-4 text-gray-300">データの読み込みに失敗しました。GitHub Pagesにファイルが正しくアップロードされているか、ファイルパスやファイル名が正しいかを確認してください。</p></div>`;
             }
             
             function setupEventListeners(facilityData) {
@@ -268,18 +268,14 @@
                 const map = L.Util.getMapInstance('map');
 
                 tabs.forEach(tab => {
-                    tab.addEventListener('click', () => {
-                        switchToTab(tab.dataset.tab, map);
-                    });
+                    tab.addEventListener('click', () => switchToTab(tab.dataset.tab, map));
                 });
                 
-                map.on('popupopen', function(e) {
-                    const popupNode = e.popup.getElement();
-                    const btn = popupNode.querySelector('.popup-calendar-btn');
+                map.on('popupopen', (e) => {
+                    const btn = e.popup.getElement().querySelector('.popup-calendar-btn');
                     if (btn) {
                         btn.addEventListener('click', () => {
-                            const facilityName = btn.dataset.facilityName;
-                            const facility = facilityData.find(f => f.地点名 === facilityName);
+                            const facility = facilityData.find(f => f.地点名 === btn.dataset.facilityName);
                             if (facility) {
                                 displayDailyCalendarForFacility(facility, facilityData);
                                 switchToTab('calendar-content', map);
@@ -288,10 +284,9 @@
                     }
                 });
 
-                document.getElementById('introduction-content').addEventListener('click', function(e) {
+                document.getElementById('introduction-content').addEventListener('click', (e) => {
                     if (e.target.matches('.intro-calendar-btn')) {
-                        const facilityName = e.target.dataset.facilityName;
-                        const facility = facilityData.find(f => f.地点名 === facilityName);
+                        const facility = facilityData.find(f => f.地点名 === e.target.dataset.facilityName);
                         if (facility) {
                             displayDailyCalendarForFacility(facility, facilityData);
                             switchToTab('calendar-content', map);
@@ -303,23 +298,15 @@
                 const modalOverlay = document.getElementById('modal-overlay');
                 const closeModalBtn = document.getElementById('close-modal-btn');
                 
-                disclaimerLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    modalOverlay.style.display = 'flex';
-                });
-
+                disclaimerLink.addEventListener('click', (e) => { e.preventDefault(); modalOverlay.style.display = 'flex'; });
                 closeModalBtn.addEventListener('click', () => modalOverlay.style.display = 'none');
-                modalOverlay.addEventListener('click', (e) => {
-                    if (e.target === modalOverlay) modalOverlay.style.display = 'none';
-                });
+                modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) modalOverlay.style.display = 'none'; });
             }
 
             function switchToTab(tabId, map) {
                 document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
                 document.querySelectorAll('.tab-content').forEach(tc => tc.classList.toggle('active', tc.id === tabId));
-                if (tabId === 'map-content' && map) {
-                    setTimeout(() => map.invalidateSize(), 1);
-                }
+                if (tabId === 'map-content' && map) setTimeout(() => map.invalidateSize(), 1);
             }
 
             function getCongestionLevel(count, criterion) {
@@ -333,9 +320,9 @@
             
             function createCustomIcon(level, facilityName) {
                 const levelInfo = CONGESTION_LEVELS[level];
-                const imageUrl = IMAGE_URLS[facilityName] || `./images/default.jpg`;
+                const imageUrl = IMAGE_URLS[facilityName] || `./images/金沢駅.jpg`;
                 return L.divIcon({
-                    html: `<div class="marker-container ${levelInfo.className}-border"><img src="${imageUrl}" alt="${facilityName}" onerror="this.onerror=null;this.src='./images/default.jpg';"></div>`,
+                    html: `<div class="marker-container ${levelInfo.className}-border"><img src="${imageUrl}" alt="${facilityName}" onerror="this.onerror=null;this.src='images/default.jpg';"></div>`,
                     className: 'custom-div-icon', iconSize: [80, 80], iconAnchor: [40, 80], popupAnchor: [0, -80]
                 });
             }
@@ -366,8 +353,7 @@
                     const popupContent = `
                         <h3 class="golden-text">${facility.地点名}</h3>
                         <p>現在の混雑状況: <strong class="${levelInfo.className}-text">${levelInfo.message}</strong></p>
-                        <button class="btn-gold popup-calendar-btn mt-2 w-full" data-facility-name="${facility.地点名}">時間帯別で表示</button>
-                    `;
+                        <button class="btn-gold popup-calendar-btn mt-2 w-full" data-facility-name="${facility.地点名}">時間帯別で表示</button>`;
                     marker.bindPopup(popupContent);
                 });
             }
@@ -376,18 +362,17 @@
                 const container = document.getElementById('introduction-content');
                 container.innerHTML = '';
                 facilityData.forEach(facility => {
-                    const imageUrl = IMAGE_URLS[facility.地点名] || `./images/default.jpg`;
+                    const imageUrl = IMAGE_URLS[facility.地点名] || `./images/金沢駅.jpg`;
                     const cardHtml = `
                         <div class="facility-card">
-                            <img src="${imageUrl}" alt="${facility.地点名}" onerror="this.onerror=null;this.src='./images/default.jpg';">
+                            <img src="${imageUrl}" alt="${facility.地点名}" onerror="this.onerror=null;this.src='./images/金沢駅.jpg';">
                             <div class="p-6 flex flex-col">
                                 <h3 class="text-2xl font-bold golden-text">${facility.地点名}</h3>
                                 <p class="text-gray-400 mb-4">${facility.英語名称 || ''}</p>
                                 <p class="text-gray-300 flex-grow">${facility.説明 || ''}</p>
                                 <button class="btn-gold intro-calendar-btn mt-4 self-start" data-facility-name="${facility.地点名}">本日の混雑度を確認する</button>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                     container.innerHTML += cardHtml;
                 });
             }
@@ -412,24 +397,15 @@
                 facilityData.forEach(facility => {
                     dataByFacilityAndHour[facility.地点名] = facility.milli
                         .filter(d => d.年月日 === latestDate)
-                        .reduce((acc, row) => {
-                            acc[parseInt(row.時刻, 10)] = row.人数;
-                            return acc;
-                        }, {});
+                        .reduce((acc, row) => { acc[parseInt(row.時刻, 10)] = row.人数; return acc; }, {});
                 });
 
                 let bodyHtml = '';
                 for (let hour = 8; hour <= 20; hour++) {
                     bodyHtml += `<tr><td class="time-header">${String(hour).padStart(2, '0')}:00</td>`;
                     facilityData.forEach(facility => {
-                        if (hour > currentHour) {
-                            bodyHtml += `<td class="future-time-bg"></td>`;
-                            return;
-                        }
-                        if (!facility.criterion) {
-                            bodyHtml += `<td>-</td>`;
-                            return;
-                        }
+                        if (hour > currentHour) { bodyHtml += `<td class="future-time-bg"></td>`; return; }
+                        if (!facility.criterion) { bodyHtml += `<td>-</td>`; return; }
                         const count = dataByFacilityAndHour[facility.地点名][hour] || 0;
                         const level = getCongestionLevel(count, facility.criterion);
                         bodyHtml += `<td class="${CONGESTION_LEVELS[level].className}-bg" title="${count}人"></td>`;
